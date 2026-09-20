@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="ja">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,viewport-fit=cover">
+<meta name="theme-color" content="#168748">
+<link rel="manifest" href="manifest.json">
+<link rel="apple-touch-icon" href="icon.svg">
+<title>KIDS GOLF AI COACH</title>
+<style>
+:root{--g:#168748;--bg:#f6fbf7;--line:#dbe8de;--ink:#17211b;--sub:#66736a;--mint:#edf8f0;--pink:#ffe9ed;--yellow:#fff4d8;--blue:#edf3ff}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--ink);font-family:-apple-system,BlinkMacSystemFont,"Segoe UI","Yu Gothic",sans-serif}
+.wrap{max-width:940px;margin:auto;padding:16px 13px 46px}header{display:flex;justify-content:space-between;align-items:center;margin-bottom:14px}
+.brand{font-weight:900;color:var(--g);font-size:20px}.pill{font-size:11px;background:#fff;border:1px solid var(--line);padding:7px 9px;border-radius:999px}
+.card{background:#fff;border:1px solid var(--line);border-radius:20px;padding:17px;margin-bottom:13px;box-shadow:0 8px 25px rgba(22,135,72,.06)}
+h1{font-size:27px;line-height:1.25;margin:4px 0 10px}h2{font-size:19px;margin:0 0 12px}p{line-height:1.65}
+.btn{width:100%;border-radius:15px;padding:15px 16px;font-size:16px;font-weight:800;margin-top:9px;cursor:pointer}
+.primary{background:var(--g);color:#fff;border:0}.secondary{background:#fff;color:var(--g);border:2px solid var(--g)}
+input[type=file]{display:none}video{width:100%;border-radius:14px;background:#111;max-height:60vh}
+.status{border-radius:12px;padding:11px 12px;background:#f3f7f4;font-size:13px;margin-top:10px;line-height:1.55;word-break:break-word}
+.ok{background:var(--mint);color:#0f6f3c}.err{background:#fff0f0;color:#8f1e1e}.warn{background:#fff7df;color:#765a00}.hidden{display:none}
+.grid{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}.frame{border:1px solid var(--line);padding:8px;border-radius:14px;background:#fbfdfb}
+.frame canvas{width:100%;background:#111;border-radius:9px;aspect-ratio:9/16;object-fit:cover}.tag{font-size:11px;font-weight:900;color:var(--g);margin-bottom:5px}
+.note{font-size:12px;color:var(--sub);line-height:1.5}.range{width:100%}.metrics{display:grid;grid-template-columns:repeat(2,1fr);gap:9px}
+.metric{border:1px solid var(--line);border-radius:15px;padding:12px;background:#fbfdfb}.metric .value{font-size:22px;font-weight:900;color:var(--g)}
+.metric .label{font-size:11px;color:var(--sub);margin-top:5px}.result{border-radius:16px;padding:14px;margin:10px 0;line-height:1.6}
+.result b{display:block;margin-bottom:4px}.good{background:var(--mint)}.point{background:var(--pink)}.practice{background:var(--yellow)}.info{background:var(--blue)}
+.tableWrap{overflow:auto;margin-top:12px}table{border-collapse:collapse;width:100%;min-width:650px;font-size:13px}th,td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:right}
+th:first-child,td:first-child{text-align:left}.badge{display:inline-block;border-radius:999px;padding:4px 8px;background:#eef8f0;color:var(--g);font-weight:800;font-size:11px}
+.small{font-size:11px;color:var(--sub)}@media(min-width:720px){.grid{grid-template-columns:repeat(4,1fr)}.metrics{grid-template-columns:repeat(5,1fr)}}
+</style>
+</head>
+<body>
+<div class="wrap">
+<header><div class="brand">KIDS GOLF AI COACH</div><div class="pill">iPhone / iPad 単体版</div></header>
+
+<div class="card">
+<h1>スイングを解析して<br>今日のポイントを1つ表示</h1>
+<div class="result info"><b>ホーム画面から使えます</b>Safariの共有ボタン →「ホーム画面に追加」で、次回からアプリのように起動できます。</div>
+<button id="diagBtn" class="btn secondary">骨格AI接続テスト</button>
+<div id="diagStatus" class="status">まだテストしていません。</div>
+</div>
+
+<section id="videoCard" class="card hidden">
+<h2>1. 動画を選択</h2>
+<label class="btn primary" for="fileInput">自分の動画を選ぶ</label>
+<input id="fileInput" type="file" accept="video/*,.mov,.mp4,.m4v,video/quicktime,video/mp4">
+<video id="video" controls playsinline webkit-playsinline preload="metadata"></video>
+<div id="videoStatus" class="status">動画を選んでください。</div>
+<button id="analyzeBtn" class="btn primary" disabled>4ポジションを解析する</button>
+</section>
+
+<section id="resultCard" class="hidden">
+<div class="card"><h2>2. 4ポジション</h2><div id="frames" class="grid"></div>
+<p class="note">自動位置がずれていたら、各スライダーを動かして指を離すと、その場面だけ再解析します。</p></div>
+<div class="card"><h2>3. 今回の数値</h2><div id="summaryMetrics" class="metrics"></div>
+<div class="result info"><b>横移動の見方</b>アドレス時の肩幅を100として表示します。＋は画面右、−は画面左です。</div>
+<div class="tableWrap"><table id="detailTable"></table></div></div>
+<div class="card"><h2>4. 今日のフィードバック</h2><div id="feedback"></div>
+<div class="small">※判定しきい値は試作用です。実際の動画を見ながら調整していきます。</div></div>
+</section>
+
+<div class="card"><h2>使い方</h2>
+<p class="note">①「骨格AI接続テスト」→ ②動画を選ぶ → ③「4ポジションを解析する」</p>
+<p class="note">初回はMediaPipeのライブラリと姿勢モデルを読み込むため、インターネット接続が必要です。</p></div>
+</div>
+
+<script type="module">
+const MP_VERSION='1.0.1';
+const MODULE_URL=`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}/+esm`;
+const WASM_URL=`https://cdn.jsdelivr.net/npm/@mediapipe/tasks-vision@${MP_VERSION}/wasm`;
+const MODEL_URL='https://storage.googleapis.com/mediapipe-models/pose_landmarker/pose_landmarker_lite/float16/1/pose_landmarker_lite.task';
+
+const diagBtn=document.getElementById('diagBtn'),diagStatus=document.getElementById('diagStatus'),videoCard=document.getElementById('videoCard');
+const fileInput=document.getElementById('fileInput'),video=document.getElementById('video'),videoStatus=document.getElementById('videoStatus');
+const analyzeBtn=document.getElementById('analyzeBtn'),resultCard=document.getElementById('resultCard'),frames=document.getElementById('frames');
+const summaryMetrics=document.getElementById('summaryMetrics'),detailTable=document.getElementById('detailTable'),feedback=document.getElementById('feedback');
+
+let PoseLandmarker,FilesetResolver,DrawingUtils,poseLandmarker=null,objectUrl=null,phaseData={};
+const defs=[{name:'ADDRESS',ratio:.06},{name:'TOP',ratio:.43},{name:'IMPACT',ratio:.56},{name:'FINISH',ratio:.74}];
+
+function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
+
+async function initPose(){
+ diagBtn.disabled=true;diagStatus.className='status';diagStatus.textContent='骨格AIを読み込んでいます…';
+ try{
+  const mod=await import(MODULE_URL);({PoseLandmarker,FilesetResolver,DrawingUtils}=mod);
+  const vision=await FilesetResolver.forVisionTasks(WASM_URL);
+  poseLandmarker=await PoseLandmarker.createFromModelPath(vision,MODEL_URL);
+  diagStatus.className='status ok';diagStatus.textContent='骨格AI接続成功。動画を選べます。';
+  videoCard.classList.remove('hidden');
+ }catch(err){
+  console.error(err);diagStatus.className='status err';diagStatus.innerHTML='<b>接続失敗</b><br>'+esc(err?.name||'Error')+': '+esc(err?.message||String(err));
+ }finally{diagBtn.disabled=false;}
+}
+diagBtn.addEventListener('click',initPose);
+
+function setVideo(src){videoStatus.className='status';videoStatus.textContent='動画を読み込んでいます…';analyzeBtn.disabled=true;video.src=src;video.load();}
+fileInput.addEventListener('change',()=>{const f=fileInput.files?.[0];if(!f)return;if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(f);setVideo(objectUrl);});
+video.addEventListener('loadedmetadata',()=>{videoStatus.className='status ok';videoStatus.innerHTML=`動画読み込み成功：${video.duration.toFixed(2)}秒 / ${video.videoWidth}×${video.videoHeight}`;analyzeBtn.disabled=!poseLandmarker;});
+video.addEventListener('error',()=>{videoStatus.className='status err';videoStatus.textContent='動画を読み込めませんでした。';});
+
+function seek(t){return new Promise(resolve=>{video.addEventListener('seeked',resolve,{once:true});video.currentTime=Math.max(0,Math.min(t,video.duration-0.02));});}
+function dist(a,b){return Math.hypot(a.x-b.x,a.y-b.y)} function center(a,b){return{x:(a.x+b.x)/2,y:(a.y+b.y)/2}}
+function angle3(a,b,c){const ab={x:a.x-b.x,y:a.y-b.y},cb={x:c.x-b.x,y:c.y-b.y};const den=Math.hypot(ab.x,ab.y)*Math.hypot(cb.x,cb.y);if(!den)return NaN;const v=Math.max(-1,Math.min(1,(ab.x*cb.x+ab.y*cb.y)/den));return Math.acos(v)*180/Math.PI;}
+function metrics(lm){const nose=lm[0],ls=lm[11],rs=lm[12],lh=lm[23],rh=lm[24],lk=lm[25],rk=lm[26],la=lm[27],ra=lm[28];const sh=center(ls,rs),hip=center(lh,rh);return{nose,sh,hip,shoulderWidth:dist(ls,rs),shoulderTilt:Math.atan2(rs.y-ls.y,rs.x-ls.x)*180/Math.PI,leftKnee:angle3(lh,lk,la),rightKnee:angle3(rh,rk,ra),bodyCenter:{x:(sh.x+hip.x)/2,y:(sh.y+hip.y)/2}};}
+function normalizedShift(phase,key){const base=phaseData.ADDRESS;if(!phase||!base||!base.metrics.shoulderWidth)return NaN;return(phase.metrics[key].x-base.metrics[key].x)/base.metrics.shoulderWidth*100;}
+function signed(v,d=1){return Number.isFinite(v)?`${v>=0?'+':''}${v.toFixed(d)}`:'—'} function fmt(v,d=1){return Number.isFinite(v)?v.toFixed(d):'—'}
+
+async function analyzeAt(def,ratioValue,canvas,note){
+ const t=(ratioValue/1000)*video.duration;await seek(t);canvas.width=video.videoWidth;canvas.height=video.videoHeight;
+ const ctx=canvas.getContext('2d');ctx.drawImage(video,0,0,canvas.width,canvas.height);const res=poseLandmarker.detect(video);
+ if(res.landmarks?.[0]){const lm=res.landmarks[0],du=new DrawingUtils(ctx);du.drawConnectors(lm,PoseLandmarker.POSE_CONNECTIONS,{color:'#ffe100',lineWidth:4});du.drawLandmarks(lm,{color:'#ff4f40',fillColor:'#fff',radius:4,lineWidth:2});phaseData[def.name]={time:t,landmarks:lm,metrics:metrics(lm)};note.textContent=`${t.toFixed(2)}秒 / 検出成功`;}
+ else{phaseData[def.name]=null;note.textContent=`${t.toFixed(2)}秒 / 未検出`;}updateOutput();
+}
+async function buildFrames(){frames.innerHTML='';phaseData={};for(const def of defs){const box=document.createElement('div');box.className='frame';const tag=document.createElement('div');tag.className='tag';tag.textContent=def.name;const c=document.createElement('canvas');const range=document.createElement('input');range.type='range';range.className='range';range.min=0;range.max=1000;range.value=Math.round(def.ratio*1000);const note=document.createElement('div');note.className='note';box.append(tag,c,range,note);frames.appendChild(box);range.addEventListener('change',()=>analyzeAt(def,Number(range.value),c,note));await analyzeAt(def,Number(range.value),c,note);}}
+
+function chooseFeedback(){
+ const base=phaseData.ADDRESS,top=phaseData.TOP,impact=phaseData.IMPACT,finish=phaseData.FINISH;
+ if(!base||!top||!impact||!finish)return{good:'骨格を検出できた場面を確認できています。',point:'未検出の場面があるので、スライダーで位置を少し調整してみましょう。',practice:'全身が画面に入る位置で、もう一度1スイング撮影してみましょう。'};
+ const headTop=normalizedShift(top,'nose'),hipImpact=normalizedShift(impact,'hip'),bodyFinish=normalizedShift(finish,'bodyCenter'),kneeDiff=Math.abs(impact.metrics.leftKnee-impact.metrics.rightKnee);
+ let good=Math.abs(headTop)<20?'トップまでの頭部横移動が比較的小さく収まっています。':'フィニッシュまで身体の動きを確認できています。',point,practice;
+ if(Math.abs(bodyFinish)>=45){point='フィニッシュで身体中心の横移動が大きめです。まずはフィニッシュのバランスを確認してみましょう。';practice='フィニッシュで3秒止まる素振りを5回してみましょう。';}
+ else if(Math.abs(headTop)>=30){point='トップで頭部中心の横移動が大きめです。今日は頭の位置を確認ポイントにしましょう。';practice='頭の横に目印を置き、頭を大きく動かさずにハーフスイングを5回してみましょう。';}
+ else if(Math.abs(hipImpact)>=35){point='インパクト付近で腰中心の横移動が大きめです。腰と身体中心の動きを確認してみましょう。';practice='腰の位置を意識しながら、ゆっくりしたハーフスイングを5回してみましょう。';}
+ else if(kneeDiff>=25){point='インパクト付近で左右の膝角度に差が見られます。今日は足元のバランスを確認してみましょう。';practice='足幅を一定にして、フィニッシュでバランスよく立てる素振りを5回してみましょう。';}
+ else{point='大きな変化は少ないので、今日は同じテンポで振ることを意識してみましょう。';practice='ゆっくりした素振りを5回してから、同じリズムで1球打ってみましょう。';}
+ return{good,point,practice};
+}
+
+function updateOutput(){
+ const base=phaseData.ADDRESS;if(!base)return;const top=phaseData.TOP,impact=phaseData.IMPACT,finish=phaseData.FINISH;
+ const headTop=normalizedShift(top,'nose'),hipImpact=normalizedShift(impact,'hip'),bodyFinish=normalizedShift(finish,'bodyCenter');
+ summaryMetrics.innerHTML=`<div class="metric"><div class="value">${signed(headTop)}%</div><div class="label">TOP 頭の横移動</div></div><div class="metric"><div class="value">${top?fmt(top.metrics.shoulderTilt)+'°':'—'}</div><div class="label">TOP 肩の傾き</div></div><div class="metric"><div class="value">${signed(hipImpact)}%</div><div class="label">IMPACT 腰の横移動</div></div><div class="metric"><div class="value">${impact?fmt(impact.metrics.leftKnee)+'°':'—'}</div><div class="label">IMPACT 左膝</div></div><div class="metric"><div class="value">${signed(bodyFinish)}%</div><div class="label">FINISH 身体中心</div></div>`;
+ let rows='<tr><th>場面</th><th>頭 横移動</th><th>腰 横移動</th><th>肩傾き</th><th>左膝</th><th>右膝</th></tr>';
+ for(const def of defs){const p=phaseData[def.name];if(!p){rows+=`<tr><td><span class="badge">${def.name}</span></td><td colspan="5">未検出</td></tr>`;continue;}rows+=`<tr><td><span class="badge">${def.name}</span></td><td>${signed(normalizedShift(p,'nose'))}%</td><td>${signed(normalizedShift(p,'hip'))}%</td><td>${fmt(p.metrics.shoulderTilt)}°</td><td>${fmt(p.metrics.leftKnee)}°</td><td>${fmt(p.metrics.rightKnee)}°</td></tr>`;}
+ detailTable.innerHTML=rows;const fb=chooseFeedback();feedback.innerHTML=`<div class="result good"><b>GOOD</b>${fb.good}</div><div class="result point"><b>今日のポイント</b>${fb.point}</div><div class="result practice"><b>今日の練習</b>${fb.practice}</div>`;
+}
+
+analyzeBtn.addEventListener('click',async()=>{if(!poseLandmarker)return;analyzeBtn.disabled=true;analyzeBtn.textContent='解析中…';resultCard.classList.remove('hidden');try{await buildFrames();resultCard.scrollIntoView({behavior:'smooth'});}catch(err){console.error(err);feedback.innerHTML=`<div class="status err">${esc(err?.name||'Error')}: ${esc(err?.message||String(err))}</div>`;}finally{analyzeBtn.disabled=false;analyzeBtn.textContent='4ポジションを解析する';}});
+
+if('serviceWorker' in navigator)navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
+</script>
+</body>
+</html>
