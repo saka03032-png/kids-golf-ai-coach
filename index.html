@@ -27,16 +27,22 @@ input[type=file]{display:none}video{width:100%;border-radius:14px;background:#11
 .result b{display:block;margin-bottom:4px}.good{background:var(--mint)}.point{background:var(--pink)}.practice{background:var(--yellow)}.info{background:var(--blue)}
 .tableWrap{overflow:auto;margin-top:12px}table{border-collapse:collapse;width:100%;min-width:650px;font-size:13px}th,td{padding:9px 8px;border-bottom:1px solid var(--line);text-align:right}
 th:first-child,td:first-child{text-align:left}.badge{display:inline-block;border-radius:999px;padding:4px 8px;background:#eef8f0;color:var(--g);font-weight:800;font-size:11px}
-.small{font-size:11px;color:var(--sub)}@media(min-width:720px){.grid{grid-template-columns:repeat(4,1fr)}.metrics{grid-template-columns:repeat(5,1fr)}}
+.small{font-size:11px;color:var(--sub)}
+.historyHead{display:flex;justify-content:space-between;align-items:center;gap:10px}.historyCount{font-size:12px;color:var(--sub)}
+.historyItem{border:1px solid var(--line);border-radius:16px;padding:13px;margin:10px 0;background:#fbfdfb}
+.historyTop{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.historyDate{font-weight:900}.historyFile{font-size:11px;color:var(--sub);word-break:break-all;margin-top:3px}
+.historyMetrics{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-top:10px}.historyMetric{background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px}.historyMetric b{display:block;color:var(--g);font-size:17px}.historyMetric span{font-size:10px;color:var(--sub)}
+.historyItem details{margin-top:10px}.historyItem summary{cursor:pointer;font-weight:800;color:var(--g)}.danger{background:#fff;color:#9b2424;border:1px solid #e6bcbc}.miniBtn{border-radius:10px;padding:7px 9px;font-size:11px;font-weight:800;cursor:pointer}
+@media(min-width:720px){.grid{grid-template-columns:repeat(4,1fr)}.metrics{grid-template-columns:repeat(5,1fr)}}
 </style>
 </head>
 <body>
 <div class="wrap">
-<header><div class="brand">KIDS GOLF AI COACH</div><div class="pill">iPhone / iPad 単体版</div></header>
+<header><div class="brand">KIDS GOLF AI COACH</div><div class="pill">スマホ / タブレット / PC</div></header>
 
 <div class="card">
 <h1>スイングを解析して<br>今日のポイントを1つ表示</h1>
-<div class="result info"><b>ホーム画面から使えます</b>Safariの共有ボタン →「ホーム画面に追加」で、次回からアプリのように起動できます。</div>
+<div class="result info"><b>アプリのように使えます</b>iPhone/iPadはSafariの共有 →「ホーム画面に追加」。Surface/WindowsはEdgeの「アプリとしてインストール」が使えます。</div>
 <button id="diagBtn" class="btn secondary">骨格AI接続テスト</button>
 <div id="diagStatus" class="status">まだテストしていません。</div>
 </div>
@@ -57,8 +63,17 @@ th:first-child,td:first-child{text-align:left}.badge{display:inline-block;border
 <div class="result info"><b>横移動の見方</b>アドレス時の肩幅を100として表示します。＋は画面右、−は画面左です。</div>
 <div class="tableWrap"><table id="detailTable"></table></div></div>
 <div class="card"><h2>4. 今日のフィードバック</h2><div id="feedback"></div>
+<button id="saveHistoryBtn" class="btn primary" disabled>この解析結果を履歴に保存</button>
+<div id="historyStatus" class="status hidden"></div>
 <div class="small">※判定しきい値は試作用です。実際の動画を見ながら調整していきます。</div></div>
 </section>
+
+<div class="card">
+  <div class="historyHead"><h2 style="margin:0">解析履歴</h2><span id="historyCount" class="historyCount"></span></div>
+  <div class="result info"><b>この端末に保存します</b>動画そのものは保存せず、解析日時・ファイル名・数値・コメントだけをブラウザ内に保存します。別の端末とは自動同期されません。</div>
+  <div id="historyList"></div>
+  <button id="clearHistoryBtn" class="btn danger hidden">履歴をすべて削除</button>
+</div>
 
 <div class="card"><h2>使い方</h2>
 <p class="note">①「骨格AI接続テスト」→ ②動画を選ぶ → ③「4ポジションを解析する」</p>
@@ -75,8 +90,12 @@ const diagBtn=document.getElementById('diagBtn'),diagStatus=document.getElementB
 const fileInput=document.getElementById('fileInput'),video=document.getElementById('video'),videoStatus=document.getElementById('videoStatus');
 const analyzeBtn=document.getElementById('analyzeBtn'),resultCard=document.getElementById('resultCard'),frames=document.getElementById('frames');
 const summaryMetrics=document.getElementById('summaryMetrics'),detailTable=document.getElementById('detailTable'),feedback=document.getElementById('feedback');
+const saveHistoryBtn=document.getElementById('saveHistoryBtn'),historyStatus=document.getElementById('historyStatus'),historyList=document.getElementById('historyList'),historyCount=document.getElementById('historyCount'),clearHistoryBtn=document.getElementById('clearHistoryBtn');
 
 let PoseLandmarker,FilesetResolver,DrawingUtils,poseLandmarker=null,objectUrl=null,phaseData={};
+let currentFileName='',currentFeedback=null;
+const HISTORY_KEY='kidsGolfHistoryV1';
+const HISTORY_LIMIT=50;
 const defs=[{name:'ADDRESS',ratio:.06},{name:'TOP',ratio:.43},{name:'IMPACT',ratio:.56},{name:'FINISH',ratio:.74}];
 
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
@@ -96,7 +115,7 @@ async function initPose(){
 diagBtn.addEventListener('click',initPose);
 
 function setVideo(src){videoStatus.className='status';videoStatus.textContent='動画を読み込んでいます…';analyzeBtn.disabled=true;video.src=src;video.load();}
-fileInput.addEventListener('change',()=>{const f=fileInput.files?.[0];if(!f)return;if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(f);setVideo(objectUrl);});
+fileInput.addEventListener('change',()=>{const f=fileInput.files?.[0];if(!f)return;currentFileName=f.name||'動画';currentFeedback=null;saveHistoryBtn.disabled=true;historyStatus.classList.add('hidden');if(objectUrl)URL.revokeObjectURL(objectUrl);objectUrl=URL.createObjectURL(f);setVideo(objectUrl);});
 video.addEventListener('loadedmetadata',()=>{videoStatus.className='status ok';videoStatus.innerHTML=`動画読み込み成功：${video.duration.toFixed(2)}秒 / ${video.videoWidth}×${video.videoHeight}`;analyzeBtn.disabled=!poseLandmarker;});
 video.addEventListener('error',()=>{videoStatus.className='status err';videoStatus.textContent='動画を読み込めませんでした。';});
 
@@ -114,6 +133,77 @@ async function analyzeAt(def,ratioValue,canvas,note){
  else{phaseData[def.name]=null;note.textContent=`${t.toFixed(2)}秒 / 未検出`;}updateOutput();
 }
 async function buildFrames(){frames.innerHTML='';phaseData={};for(const def of defs){const box=document.createElement('div');box.className='frame';const tag=document.createElement('div');tag.className='tag';tag.textContent=def.name;const c=document.createElement('canvas');const range=document.createElement('input');range.type='range';range.className='range';range.min=0;range.max=1000;range.value=Math.round(def.ratio*1000);const note=document.createElement('div');note.className='note';box.append(tag,c,range,note);frames.appendChild(box);range.addEventListener('change',()=>analyzeAt(def,Number(range.value),c,note));await analyzeAt(def,Number(range.value),c,note);}}
+
+function readHistory(){
+ try{const v=JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]');return Array.isArray(v)?v:[];}catch{return [];}
+}
+function writeHistory(items){localStorage.setItem(HISTORY_KEY,JSON.stringify(items.slice(0,HISTORY_LIMIT)));}
+function safeNum(v){return Number.isFinite(v)?Math.round(v*10)/10:null;}
+function dateLabel(iso){
+ try{return new Intl.DateTimeFormat('ja-JP',{year:'numeric',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(iso));}
+ catch{return iso;}
+}
+function historyMetric(label,value,suffix=''){
+ return '<div class="historyMetric"><b>'+esc(value===null||value===undefined?'—':value+suffix)+'</b><span>'+esc(label)+'</span></div>';
+}
+function renderHistory(){
+ const items=readHistory();historyCount.textContent=items.length+'件';clearHistoryBtn.classList.toggle('hidden',items.length===0);
+ if(!items.length){historyList.innerHTML='<p class="note">まだ保存された解析結果はありません。</p>';return;}
+ historyList.innerHTML=items.map(item=>{
+   const s=item.summary||{},fb=item.feedback||{};
+   return '<div class="historyItem" data-id="'+esc(item.id)+'">'
+    +'<div class="historyTop"><div><div class="historyDate">'+esc(dateLabel(item.createdAt))+'</div><div class="historyFile">'+esc(item.fileName||'動画')+'</div></div>'
+    +'<button class="miniBtn danger" data-delete="'+esc(item.id)+'">削除</button></div>'
+    +'<div class="historyMetrics">'
+    +historyMetric('TOP 頭の横移動',s.headTop,'%')
+    +historyMetric('IMPACT 腰の横移動',s.hipImpact,'%')
+    +historyMetric('TOP 肩の傾き',s.shoulderTop,'°')
+    +historyMetric('FINISH 身体中心',s.bodyFinish,'%')
+    +'</div>'
+    +'<details><summary>コメントと詳細を見る</summary>'
+    +'<div class="result good"><b>GOOD</b>'+esc(fb.good||'—')+'</div>'
+    +'<div class="result point"><b>今日のポイント</b>'+esc(fb.point||'—')+'</div>'
+    +'<div class="result practice"><b>今日の練習</b>'+esc(fb.practice||'—')+'</div>'
+    +'</details></div>';
+ }).join('');
+ historyList.querySelectorAll('[data-delete]').forEach(btn=>btn.addEventListener('click',()=>{
+   const id=btn.getAttribute('data-delete');writeHistory(readHistory().filter(x=>x.id!==id));renderHistory();
+ }));
+}
+function makeHistoryRecord(){
+ const top=phaseData.TOP,impact=phaseData.IMPACT,finish=phaseData.FINISH;
+ if(!phaseData.ADDRESS||!top||!impact||!finish||!currentFeedback)return null;
+ const phases={};
+ for(const def of defs){
+   const p=phaseData[def.name];if(!p)continue;
+   phases[def.name]={time:safeNum(p.time),headShift:safeNum(normalizedShift(p,'nose')),hipShift:safeNum(normalizedShift(p,'hip')),shoulderTilt:safeNum(p.metrics.shoulderTilt),leftKnee:safeNum(p.metrics.leftKnee),rightKnee:safeNum(p.metrics.rightKnee)};
+ }
+ return {
+   id:(crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(16).slice(2)),
+   createdAt:new Date().toISOString(),
+   fileName:currentFileName||'動画',
+   duration:safeNum(video.duration),
+   summary:{
+     headTop:safeNum(normalizedShift(top,'nose')),
+     shoulderTop:safeNum(top.metrics.shoulderTilt),
+     hipImpact:safeNum(normalizedShift(impact,'hip')),
+     leftKneeImpact:safeNum(impact.metrics.leftKnee),
+     rightKneeImpact:safeNum(impact.metrics.rightKnee),
+     bodyFinish:safeNum(normalizedShift(finish,'bodyCenter'))
+   },
+   phases,
+   feedback:{...currentFeedback}
+ };
+}
+saveHistoryBtn.addEventListener('click',()=>{
+ const record=makeHistoryRecord();
+ if(!record){historyStatus.className='status warn';historyStatus.textContent='4ポジションすべて検出できた結果を保存できます。';historyStatus.classList.remove('hidden');return;}
+ const items=readHistory();items.unshift(record);writeHistory(items);renderHistory();
+ historyStatus.className='status ok';historyStatus.textContent='解析結果をこの端末に保存しました。';historyStatus.classList.remove('hidden');
+});
+clearHistoryBtn.addEventListener('click',()=>{
+ if(confirm('この端末に保存した解析履歴をすべて削除しますか？')){localStorage.removeItem(HISTORY_KEY);renderHistory();}
+});
 
 function chooseFeedback(){
  const base=phaseData.ADDRESS,top=phaseData.TOP,impact=phaseData.IMPACT,finish=phaseData.FINISH;
@@ -134,11 +224,13 @@ function updateOutput(){
  summaryMetrics.innerHTML=`<div class="metric"><div class="value">${signed(headTop)}%</div><div class="label">TOP 頭の横移動</div></div><div class="metric"><div class="value">${top?fmt(top.metrics.shoulderTilt)+'°':'—'}</div><div class="label">TOP 肩の傾き</div></div><div class="metric"><div class="value">${signed(hipImpact)}%</div><div class="label">IMPACT 腰の横移動</div></div><div class="metric"><div class="value">${impact?fmt(impact.metrics.leftKnee)+'°':'—'}</div><div class="label">IMPACT 左膝</div></div><div class="metric"><div class="value">${signed(bodyFinish)}%</div><div class="label">FINISH 身体中心</div></div>`;
  let rows='<tr><th>場面</th><th>頭 横移動</th><th>腰 横移動</th><th>肩傾き</th><th>左膝</th><th>右膝</th></tr>';
  for(const def of defs){const p=phaseData[def.name];if(!p){rows+=`<tr><td><span class="badge">${def.name}</span></td><td colspan="5">未検出</td></tr>`;continue;}rows+=`<tr><td><span class="badge">${def.name}</span></td><td>${signed(normalizedShift(p,'nose'))}%</td><td>${signed(normalizedShift(p,'hip'))}%</td><td>${fmt(p.metrics.shoulderTilt)}°</td><td>${fmt(p.metrics.leftKnee)}°</td><td>${fmt(p.metrics.rightKnee)}°</td></tr>`;}
- detailTable.innerHTML=rows;const fb=chooseFeedback();feedback.innerHTML=`<div class="result good"><b>GOOD</b>${fb.good}</div><div class="result point"><b>今日のポイント</b>${fb.point}</div><div class="result practice"><b>今日の練習</b>${fb.practice}</div>`;
+ detailTable.innerHTML=rows;const fb=chooseFeedback();currentFeedback=fb;feedback.innerHTML=`<div class="result good"><b>GOOD</b>${fb.good}</div><div class="result point"><b>今日のポイント</b>${fb.point}</div><div class="result practice"><b>今日の練習</b>${fb.practice}</div>`;
+ saveHistoryBtn.disabled=!(phaseData.ADDRESS&&phaseData.TOP&&phaseData.IMPACT&&phaseData.FINISH);
 }
 
 analyzeBtn.addEventListener('click',async()=>{if(!poseLandmarker)return;analyzeBtn.disabled=true;analyzeBtn.textContent='解析中…';resultCard.classList.remove('hidden');try{await buildFrames();resultCard.scrollIntoView({behavior:'smooth'});}catch(err){console.error(err);feedback.innerHTML=`<div class="status err">${esc(err?.name||'Error')}: ${esc(err?.message||String(err))}</div>`;}finally{analyzeBtn.disabled=false;analyzeBtn.textContent='4ポジションを解析する';}});
 
+renderHistory();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
 </script>
 </body>
