@@ -33,7 +33,12 @@ th:first-child,td:first-child{text-align:left}.badge{display:inline-block;border
 .historyTop{display:flex;justify-content:space-between;gap:10px;align-items:flex-start}.historyDate{font-weight:900}.historyFile{font-size:11px;color:var(--sub);word-break:break-all;margin-top:3px}
 .historyMetrics{display:grid;grid-template-columns:repeat(2,1fr);gap:7px;margin-top:10px}.historyMetric{background:#fff;border:1px solid var(--line);border-radius:12px;padding:8px}.historyMetric b{display:block;color:var(--g);font-size:17px}.historyMetric span{font-size:10px;color:var(--sub)}
 .historyItem details{margin-top:10px}.historyItem summary{cursor:pointer;font-weight:800;color:var(--g)}.danger{background:#fff;color:#9b2424;border:1px solid #e6bcbc}.miniBtn{border-radius:10px;padding:7px 9px;font-size:11px;font-weight:800;cursor:pointer}
-@media(min-width:720px){.grid{grid-template-columns:repeat(4,1fr)}.metrics{grid-template-columns:repeat(5,1fr)}}
+.historyThumbs{display:grid;grid-template-columns:repeat(2,1fr);gap:8px;margin-top:10px}
+.historyThumb{background:#fff;border:1px solid var(--line);border-radius:12px;padding:6px;text-align:center}
+.historyThumb img{display:block;width:100%;border-radius:8px;background:#111;aspect-ratio:9/16;object-fit:cover}
+.historyThumb span{display:block;margin-top:4px;font-size:10px;font-weight:800;color:var(--sub)}
+.noThumb{display:flex;align-items:center;justify-content:center;width:100%;aspect-ratio:9/16;border-radius:8px;background:#f0f3f1;color:var(--sub);font-size:11px}
+@media(min-width:720px){.grid{grid-template-columns:repeat(4,1fr)}.metrics{grid-template-columns:repeat(5,1fr)}.historyThumbs{grid-template-columns:repeat(4,1fr)}}
 </style>
 </head>
 <body>
@@ -70,7 +75,8 @@ th:first-child,td:first-child{text-align:left}.badge{display:inline-block;border
 
 <div class="card">
   <div class="historyHead"><h2 style="margin:0">解析履歴</h2><span id="historyCount" class="historyCount"></span></div>
-  <div class="result info"><b>この端末に保存します</b>動画そのものは保存せず、解析日時・ファイル名・数値・コメントだけをブラウザ内に保存します。別の端末とは自動同期されません。</div>
+  <div class="result info"><b>4ポジション画像も保存します</b>動画そのものは保存せず、ADDRESS / TOP / IMPACT / FINISH の骨格線付き画像、解析日時、数値、コメントをこの端末内に保存します。別の端末とは自動同期されません。</div>
+  <p class="note">画像は容量を抑えて保存し、履歴は最大30件まで保持します。</p>
   <div id="historyList"></div>
   <button id="clearHistoryBtn" class="btn danger hidden">履歴をすべて削除</button>
 </div>
@@ -94,8 +100,11 @@ const saveHistoryBtn=document.getElementById('saveHistoryBtn'),historyStatus=doc
 
 let PoseLandmarker,FilesetResolver,DrawingUtils,poseLandmarker=null,objectUrl=null,phaseData={};
 let currentFileName='',currentFeedback=null;
-const HISTORY_KEY='kidsGolfHistoryV1';
-const HISTORY_LIMIT=50;
+const DB_NAME='kidsGolfHistoryDB';
+const DB_VERSION=1;
+const STORE_NAME='analysisHistory';
+const LEGACY_HISTORY_KEY='kidsGolfHistoryV1';
+const HISTORY_LIMIT=30;
 const defs=[{name:'ADDRESS',ratio:.06},{name:'TOP',ratio:.43},{name:'IMPACT',ratio:.56},{name:'FINISH',ratio:.74}];
 
 function esc(s){return String(s).replace(/[&<>"']/g,m=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));}
@@ -126,18 +135,87 @@ function metrics(lm){const nose=lm[0],ls=lm[11],rs=lm[12],lh=lm[23],rh=lm[24],lk
 function normalizedShift(phase,key){const base=phaseData.ADDRESS;if(!phase||!base||!base.metrics.shoulderWidth)return NaN;return(phase.metrics[key].x-base.metrics[key].x)/base.metrics.shoulderWidth*100;}
 function signed(v,d=1){return Number.isFinite(v)?`${v>=0?'+':''}${v.toFixed(d)}`:'—'} function fmt(v,d=1){return Number.isFinite(v)?v.toFixed(d):'—'}
 
+function canvasToHistoryImage(canvas){
+ const maxWidth=420;
+ const scale=Math.min(1,maxWidth/canvas.width);
+ const w=Math.max(1,Math.round(canvas.width*scale));
+ const h=Math.max(1,Math.round(canvas.height*scale));
+ const out=document.createElement('canvas');out.width=w;out.height=h;
+ out.getContext('2d').drawImage(canvas,0,0,w,h);
+ return out.toDataURL('image/jpeg',0.78);
+}
+
 async function analyzeAt(def,ratioValue,canvas,note){
  const t=(ratioValue/1000)*video.duration;await seek(t);canvas.width=video.videoWidth;canvas.height=video.videoHeight;
  const ctx=canvas.getContext('2d');ctx.drawImage(video,0,0,canvas.width,canvas.height);const res=poseLandmarker.detect(video);
- if(res.landmarks?.[0]){const lm=res.landmarks[0],du=new DrawingUtils(ctx);du.drawConnectors(lm,PoseLandmarker.POSE_CONNECTIONS,{color:'#ffe100',lineWidth:4});du.drawLandmarks(lm,{color:'#ff4f40',fillColor:'#fff',radius:4,lineWidth:2});phaseData[def.name]={time:t,landmarks:lm,metrics:metrics(lm)};note.textContent=`${t.toFixed(2)}秒 / 検出成功`;}
- else{phaseData[def.name]=null;note.textContent=`${t.toFixed(2)}秒 / 未検出`;}updateOutput();
+ if(res.landmarks?.[0]){
+  const lm=res.landmarks[0],du=new DrawingUtils(ctx);
+  du.drawConnectors(lm,PoseLandmarker.POSE_CONNECTIONS,{color:'#ffe100',lineWidth:4});
+  du.drawLandmarks(lm,{color:'#ff4f40',fillColor:'#fff',radius:4,lineWidth:2});
+  phaseData[def.name]={time:t,landmarks:lm,metrics:metrics(lm),image:canvasToHistoryImage(canvas)};
+  note.textContent=`${t.toFixed(2)}秒 / 検出成功`;
+ } else{
+  phaseData[def.name]=null;note.textContent=`${t.toFixed(2)}秒 / 未検出`;
+ }
+ updateOutput();
 }
 async function buildFrames(){frames.innerHTML='';phaseData={};for(const def of defs){const box=document.createElement('div');box.className='frame';const tag=document.createElement('div');tag.className='tag';tag.textContent=def.name;const c=document.createElement('canvas');const range=document.createElement('input');range.type='range';range.className='range';range.min=0;range.max=1000;range.value=Math.round(def.ratio*1000);const note=document.createElement('div');note.className='note';box.append(tag,c,range,note);frames.appendChild(box);range.addEventListener('change',()=>analyzeAt(def,Number(range.value),c,note));await analyzeAt(def,Number(range.value),c,note);}}
 
-function readHistory(){
- try{const v=JSON.parse(localStorage.getItem(HISTORY_KEY)||'[]');return Array.isArray(v)?v:[];}catch{return [];}
+function openHistoryDB(){
+ return new Promise((resolve,reject)=>{
+  const req=indexedDB.open(DB_NAME,DB_VERSION);
+  req.onupgradeneeded=()=>{
+   const db=req.result;
+   if(!db.objectStoreNames.contains(STORE_NAME)){
+    const store=db.createObjectStore(STORE_NAME,{keyPath:'id'});
+    store.createIndex('createdAt','createdAt',{unique:false});
+   }
+  };
+  req.onsuccess=()=>resolve(req.result);
+  req.onerror=()=>reject(req.error);
+ });
 }
-function writeHistory(items){localStorage.setItem(HISTORY_KEY,JSON.stringify(items.slice(0,HISTORY_LIMIT)));}
+async function dbPut(record){
+ const db=await openHistoryDB();
+ return new Promise((resolve,reject)=>{
+  const tx=db.transaction(STORE_NAME,'readwrite');tx.objectStore(STORE_NAME).put(record);
+  tx.oncomplete=()=>{db.close();resolve();};tx.onerror=()=>{db.close();reject(tx.error);};
+ });
+}
+async function dbGetAll(){
+ const db=await openHistoryDB();
+ return new Promise((resolve,reject)=>{
+  const tx=db.transaction(STORE_NAME,'readonly'),req=tx.objectStore(STORE_NAME).getAll();
+  req.onsuccess=()=>{const items=req.result||[];items.sort((a,b)=>new Date(b.createdAt)-new Date(a.createdAt));db.close();resolve(items);};
+  req.onerror=()=>{db.close();reject(req.error);};
+ });
+}
+async function dbDelete(id){
+ const db=await openHistoryDB();
+ return new Promise((resolve,reject)=>{
+  const tx=db.transaction(STORE_NAME,'readwrite');tx.objectStore(STORE_NAME).delete(id);
+  tx.oncomplete=()=>{db.close();resolve();};tx.onerror=()=>{db.close();reject(tx.error);};
+ });
+}
+async function dbClear(){
+ const db=await openHistoryDB();
+ return new Promise((resolve,reject)=>{
+  const tx=db.transaction(STORE_NAME,'readwrite');tx.objectStore(STORE_NAME).clear();
+  tx.oncomplete=()=>{db.close();resolve();};tx.onerror=()=>{db.close();reject(tx.error);};
+ });
+}
+async function migrateLegacyHistory(){
+ try{
+  const raw=localStorage.getItem(LEGACY_HISTORY_KEY);if(!raw)return;
+  const old=JSON.parse(raw);if(!Array.isArray(old)||!old.length){localStorage.removeItem(LEGACY_HISTORY_KEY);return;}
+  const current=await dbGetAll(),ids=new Set(current.map(x=>x.id));
+  for(const item of old){
+   if(!item.id)item.id='legacy-'+Date.now()+'-'+Math.random().toString(16).slice(2);
+   if(!ids.has(item.id))await dbPut(item);
+  }
+  localStorage.removeItem(LEGACY_HISTORY_KEY);
+ }catch(err){console.warn('旧履歴の移行をスキップしました',err);}
+}
 function safeNum(v){return Number.isFinite(v)?Math.round(v*10)/10:null;}
 function dateLabel(iso){
  try{return new Intl.DateTimeFormat('ja-JP',{year:'numeric',month:'numeric',day:'numeric',hour:'2-digit',minute:'2-digit'}).format(new Date(iso));}
@@ -146,14 +224,20 @@ function dateLabel(iso){
 function historyMetric(label,value,suffix=''){
  return '<div class="historyMetric"><b>'+esc(value===null||value===undefined?'—':value+suffix)+'</b><span>'+esc(label)+'</span></div>';
 }
-function renderHistory(){
- const items=readHistory();historyCount.textContent=items.length+'件';clearHistoryBtn.classList.toggle('hidden',items.length===0);
- if(!items.length){historyList.innerHTML='<p class="note">まだ保存された解析結果はありません。</p>';return;}
- historyList.innerHTML=items.map(item=>{
+function historyThumb(item,name){
+ const p=item.phases?.[name],src=p?.image;
+ return '<div class="historyThumb">'+(src?'<img src="'+src+'" alt="'+name+'">':'<div class="noThumb">画像なし</div>')+'<span>'+name+'</span></div>';
+}
+async function renderHistory(){
+ try{
+  const items=await dbGetAll();historyCount.textContent=items.length+'件';clearHistoryBtn.classList.toggle('hidden',items.length===0);
+  if(!items.length){historyList.innerHTML='<p class="note">まだ保存された解析結果はありません。</p>';return;}
+  historyList.innerHTML=items.map(item=>{
    const s=item.summary||{},fb=item.feedback||{};
    return '<div class="historyItem" data-id="'+esc(item.id)+'">'
     +'<div class="historyTop"><div><div class="historyDate">'+esc(dateLabel(item.createdAt))+'</div><div class="historyFile">'+esc(item.fileName||'動画')+'</div></div>'
     +'<button class="miniBtn danger" data-delete="'+esc(item.id)+'">削除</button></div>'
+    +'<div class="historyThumbs">'+historyThumb(item,'ADDRESS')+historyThumb(item,'TOP')+historyThumb(item,'IMPACT')+historyThumb(item,'FINISH')+'</div>'
     +'<div class="historyMetrics">'
     +historyMetric('TOP 頭の横移動',s.headTop,'%')
     +historyMetric('IMPACT 腰の横移動',s.hipImpact,'%')
@@ -165,44 +249,66 @@ function renderHistory(){
     +'<div class="result point"><b>今日のポイント</b>'+esc(fb.point||'—')+'</div>'
     +'<div class="result practice"><b>今日の練習</b>'+esc(fb.practice||'—')+'</div>'
     +'</details></div>';
- }).join('');
- historyList.querySelectorAll('[data-delete]').forEach(btn=>btn.addEventListener('click',()=>{
-   const id=btn.getAttribute('data-delete');writeHistory(readHistory().filter(x=>x.id!==id));renderHistory();
- }));
+  }).join('');
+  historyList.querySelectorAll('[data-delete]').forEach(btn=>btn.addEventListener('click',async()=>{
+   await dbDelete(btn.getAttribute('data-delete'));await renderHistory();
+  }));
+ }catch(err){
+  console.error(err);historyList.innerHTML='<div class="status err">履歴を読み込めませんでした。</div>';
+ }
 }
 function makeHistoryRecord(){
  const top=phaseData.TOP,impact=phaseData.IMPACT,finish=phaseData.FINISH;
  if(!phaseData.ADDRESS||!top||!impact||!finish||!currentFeedback)return null;
  const phases={};
  for(const def of defs){
-   const p=phaseData[def.name];if(!p)continue;
-   phases[def.name]={time:safeNum(p.time),headShift:safeNum(normalizedShift(p,'nose')),hipShift:safeNum(normalizedShift(p,'hip')),shoulderTilt:safeNum(p.metrics.shoulderTilt),leftKnee:safeNum(p.metrics.leftKnee),rightKnee:safeNum(p.metrics.rightKnee)};
+  const p=phaseData[def.name];if(!p)continue;
+  phases[def.name]={
+   time:safeNum(p.time),
+   headShift:safeNum(normalizedShift(p,'nose')),
+   hipShift:safeNum(normalizedShift(p,'hip')),
+   shoulderTilt:safeNum(p.metrics.shoulderTilt),
+   leftKnee:safeNum(p.metrics.leftKnee),
+   rightKnee:safeNum(p.metrics.rightKnee),
+   image:p.image||null
+  };
  }
  return {
-   id:(crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(16).slice(2)),
-   createdAt:new Date().toISOString(),
-   fileName:currentFileName||'動画',
-   duration:safeNum(video.duration),
-   summary:{
-     headTop:safeNum(normalizedShift(top,'nose')),
-     shoulderTop:safeNum(top.metrics.shoulderTilt),
-     hipImpact:safeNum(normalizedShift(impact,'hip')),
-     leftKneeImpact:safeNum(impact.metrics.leftKnee),
-     rightKneeImpact:safeNum(impact.metrics.rightKnee),
-     bodyFinish:safeNum(normalizedShift(finish,'bodyCenter'))
-   },
-   phases,
-   feedback:{...currentFeedback}
+  id:(crypto.randomUUID?crypto.randomUUID():Date.now()+'-'+Math.random().toString(16).slice(2)),
+  createdAt:new Date().toISOString(),
+  fileName:currentFileName||'動画',
+  duration:safeNum(video.duration),
+  summary:{
+   headTop:safeNum(normalizedShift(top,'nose')),
+   shoulderTop:safeNum(top.metrics.shoulderTilt),
+   hipImpact:safeNum(normalizedShift(impact,'hip')),
+   leftKneeImpact:safeNum(impact.metrics.leftKnee),
+   rightKneeImpact:safeNum(impact.metrics.rightKnee),
+   bodyFinish:safeNum(normalizedShift(finish,'bodyCenter'))
+  },
+  phases,
+  feedback:{...currentFeedback}
  };
 }
-saveHistoryBtn.addEventListener('click',()=>{
+saveHistoryBtn.addEventListener('click',async()=>{
  const record=makeHistoryRecord();
  if(!record){historyStatus.className='status warn';historyStatus.textContent='4ポジションすべて検出できた結果を保存できます。';historyStatus.classList.remove('hidden');return;}
- const items=readHistory();items.unshift(record);writeHistory(items);renderHistory();
- historyStatus.className='status ok';historyStatus.textContent='解析結果をこの端末に保存しました。';historyStatus.classList.remove('hidden');
+ saveHistoryBtn.disabled=true;saveHistoryBtn.textContent='保存中…';
+ try{
+  await dbPut(record);
+  const items=await dbGetAll();
+  for(const old of items.slice(HISTORY_LIMIT))await dbDelete(old.id);
+  await renderHistory();
+  historyStatus.className='status ok';historyStatus.textContent='4ポジション画像付きで保存しました。';historyStatus.classList.remove('hidden');
+ }catch(err){
+  console.error(err);historyStatus.className='status err';historyStatus.textContent='保存できませんでした。端末の空き容量やブラウザ設定を確認してください。';historyStatus.classList.remove('hidden');
+ }finally{
+  saveHistoryBtn.disabled=!(phaseData.ADDRESS&&phaseData.TOP&&phaseData.IMPACT&&phaseData.FINISH);
+  saveHistoryBtn.textContent='保存';
+ }
 });
-clearHistoryBtn.addEventListener('click',()=>{
- if(confirm('この端末に保存した解析履歴をすべて削除しますか？')){localStorage.removeItem(HISTORY_KEY);renderHistory();}
+clearHistoryBtn.addEventListener('click',async()=>{
+ if(confirm('この端末に保存した解析履歴をすべて削除しますか？')){await dbClear();await renderHistory();}
 });
 
 function chooseFeedback(){
@@ -230,7 +336,7 @@ function updateOutput(){
 
 analyzeBtn.addEventListener('click',async()=>{if(!poseLandmarker)return;analyzeBtn.disabled=true;analyzeBtn.textContent='解析中…';resultCard.classList.remove('hidden');try{await buildFrames();resultCard.scrollIntoView({behavior:'smooth'});}catch(err){console.error(err);feedback.innerHTML=`<div class="status err">${esc(err?.name||'Error')}: ${esc(err?.message||String(err))}</div>`;}finally{analyzeBtn.disabled=false;analyzeBtn.textContent='4ポジションを解析する';}});
 
-renderHistory();
+(async()=>{await migrateLegacyHistory();await renderHistory();})();
 if('serviceWorker' in navigator)navigator.serviceWorker.register('./service-worker.js').catch(()=>{});
 </script>
 </body>
