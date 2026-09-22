@@ -1,4 +1,4 @@
-const CACHE='kids-golf-ai-v5';
+const CACHE='kids-golf-ai-v6';
 const APP=['./','manifest.json','icon.svg'];
 
 self.addEventListener('install',event=>{
